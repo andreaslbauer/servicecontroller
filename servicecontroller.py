@@ -1,5 +1,7 @@
 #!/usr/bin/python3
 
+# requires packages psutil, gitpython
+
 import logging
 import sys
 import os
@@ -9,21 +11,52 @@ import shutil
 import stat
 import hashlib
 import psutil
+import getopt
 
-SERVICEBASE = "/opt/pimon"
+# global variables
+SERVICEBASE = "/home/pi/pimon"
 REPOS = ["datacollector", "monitorwebapp"]
+LOGTOCONSOLE = False
+
+# set up logging
+logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
 
 # check whether Windows or Linux
 IsWindows = False
 if sys.platform.startswith('win'):
     IsWindows = True
 
+# get the command line options
+def getCmdOptions():
+    # get the command line options
+    full_cmd_arguments = sys.argv
+
+    # Keep all but the first
+    argument_list = full_cmd_arguments[1:]
+
+    if ('-c' in argument_list):
+        logging.info("Log to console")
+        LOGTOCONSOLE = True
+        logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
+    else:
+        logging.info("Log to /etc/servicecontroller.log")
+        LOGTOCONSOLE = False
+        filehandler = logging.FileHandler('/tmp/servicecontroller.log', 'a')
+        log = logging.getLogger()  # root logger - Good to get it only once.
+        for hdlr in log.handlers[:]:  # remove the existing file handlers
+            if isinstance(hdlr,logging.FileHandler):
+                log.removeHandler(hdlr)
+        log.addHandler(filehandler)
+
+    logging.info("Command line arguments passed: %s", argument_list)
+
+
 # if on Windows we're running on the dev laptop.  Log to console
 if IsWindows == True:
-    logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
     SERVICEBASE = "C:/opt/pimon"
 else:
-    logging.basicConfig(filename="/tmp/monitorwebapp.log", format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
+    SERVICEBASE = "/home/pi/pimon"
+
 
 # get a specific file from github
 def cloneRepoFromGithub(reponame):
@@ -105,7 +138,8 @@ def updateFromReposIfChanged(reponame):
 def restartProcess(reponame):
     for p in psutil.process_iter():
         try:
-            print(p, p.environ())
+            if "python3" in p.exe():
+                print(p.name(), p.cmdline)
         except Exception as e:
             a = 0
 
@@ -114,6 +148,9 @@ def main():
     logging.info("##############################")
     logging.info("Service Controller has started")
     logging.info("##############################")
+
+    # get and interpret command line options
+    getCmdOptions()
 
     if IsWindows == True:
         logging.info("Running on Windows")
