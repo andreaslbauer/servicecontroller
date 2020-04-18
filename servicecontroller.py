@@ -12,6 +12,7 @@ import stat
 import hashlib
 import psutil
 import getopt
+import time
 
 # global variables
 SERVICEBASE = "/home/pi/pimon"
@@ -19,7 +20,7 @@ REPOS = ["datacollector", "monitorwebapp"]
 LOGTOCONSOLE = False
 
 # set up logging
-logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
+logging.basicConfig(filename="/tmp/servicecontroller.log", format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
 
 # check whether Windows or Linux
 IsWindows = False
@@ -35,11 +36,11 @@ def getCmdOptions():
     argument_list = full_cmd_arguments[1:]
 
     if ('-c' in argument_list):
-        logging.info("Log to console")
+        logging.debug("Log to console")
         LOGTOCONSOLE = True
         logging.basicConfig(format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
     else:
-        logging.info("Log to /etc/servicecontroller.log")
+        logging.debug("Log to /etc/servicecontroller.log")
         LOGTOCONSOLE = False
         filehandler = logging.FileHandler('/tmp/servicecontroller.log', 'a')
         log = logging.getLogger()  # root logger - Good to get it only once.
@@ -61,11 +62,11 @@ else:
 # get a specific file from github
 def cloneRepoFromGithub(reponame):
     repopath = "https://github.com/andreaslbauer/" + reponame
-    logging.info("Clone repository %s", repopath)
+    logging.debug("Clone repository %s", repopath)
 
     try:
         Repo.clone_from(repopath, reponame)
-        logging.info("Successfully cloned repository %s", repopath)
+        logging.debug("Successfully cloned repository %s", repopath)
 
 
     except Exception as e:
@@ -80,7 +81,7 @@ def cloneRepo(reponame):
 def cleanRepo(reponame):
     # delete all the repo directories
     repopath = './' + reponame
-    logging.info("Remove files for %s in %s", reponame, repopath)
+    logging.debug("Remove files for %s in %s", reponame, repopath)
 
     try:
         for root, dirs, files in os.walk(repopath):
@@ -121,7 +122,7 @@ def updateFromReposIfChanged(reponame):
                 fileschecked = fileschecked + 1
                 filepathsource = root + '/' + file
                 filepathtarget = SERVICEBASE + '/' + root + '/' + file
-                logging.info("Check files %s and %s", filepathsource, filepathtarget)
+                logging.debug("Check files %s and %s", filepathsource, filepathtarget)
 
                 # first check whether the file exists in the target directory
                 if not (not (os.path.exists(filepathtarget) == False) and not (
@@ -139,9 +140,22 @@ def restartProcess(reponame):
     for p in psutil.process_iter():
         try:
             if "python3" in p.exe():
-                print(p.name(), p.cmdline)
+
+                # see whether this is the process in question
+                if(reponame in p.name()):
+                    logging.debug("Found process %s with PID %s", reponame, p.pid)
+
+                    # stop the process
+                    p.kill()
+                    p.wait(timeout = 10)
+                    
         except Exception as e:
             a = 0
+
+    # restart the process
+    cmdline = "python3 " + SERVICEBASE + "/" + reponame + "/" + reponame + ".py &"
+    logging.debug("Start: %s", cmdline)
+    os.system(cmdline)
 
 
 def main():
@@ -150,7 +164,7 @@ def main():
     logging.info("##############################")
 
     # get and interpret command line options
-    getCmdOptions()
+    #getCmdOptions()
 
     if IsWindows == True:
         logging.info("Running on Windows")
@@ -163,19 +177,25 @@ def main():
     logging.info("Running %s", __file__)
     logging.info("Working directory is %s", os.getcwd())
 
-    for reponame in REPOS:
-        logging.info("Process repository %s", reponame)
+    # now loop forever and check whether the code has changed
+    # fetch it and restart the process if yes
+    while True:
+        for reponame in REPOS:
+            logging.debug("Process repository %s", reponame)
 
-        # clone the repos
-        cloneRepo(reponame)
+            # clone the repos
+            cloneRepo(reponame)
 
-        # check whether any files have changed (or are new)
-        if (updateFromReposIfChanged(reponame) > 0):
-            logging.info("Files have changed for %s.  Restart the process.", reponame)
-        restartProcess(reponame)
+            # check whether any files have changed (or are new)
+            if (updateFromReposIfChanged(reponame) > 0):
+                logging.info("Files have changed for %s.  Restart the process.", reponame)
+                restartProcess(reponame)
 
-        # clean up the repo
-        cleanRepo(reponame)
+            # clean up the repo
+            cleanRepo(reponame)
+
+        # sleep for 1 minute
+        time.sleep(180)
 
 # run the main loop
 main()
