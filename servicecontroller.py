@@ -19,6 +19,7 @@ import time
 SERVICEBASE = "/home/pi/pimon"
 REPOS = ["datacollector", "monitorwebapp"]
 LOGTOCONSOLE = False
+UPDATEWAITTIME = 120
 
 # set up logging
 logging.basicConfig(filename="/tmp/servicecontroller.log", format='%(asctime)s %(levelname)s %(message)s',
@@ -219,7 +220,7 @@ def main():
 
     # log start up message
     logging.info("***************************************************************")
-    logging.info("Web Monitor Application has started")
+    logging.info("Service Controller Application has started")
     logging.info("Running %s", __file__)
     logging.info("Working directory at start is %s", os.getcwd())
     os.chdir(SERVICEBASE)
@@ -241,8 +242,7 @@ def main():
                 restartProcess(reponame)
 
         # sleep for 1 minute
-        time.sleep(60)
-
+        time.sleep(UPDATEWAITTIME)
 
 # run the main loop
 main()
