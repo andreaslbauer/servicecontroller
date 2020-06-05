@@ -7,6 +7,7 @@ import sys
 import os
 from os import path
 from git.repo.base import Repo
+import git
 import shutil
 import stat
 import hashlib
@@ -20,12 +21,14 @@ REPOS = ["datacollector", "monitorwebapp"]
 LOGTOCONSOLE = False
 
 # set up logging
-logging.basicConfig(filename="/tmp/servicecontroller.log", format='%(asctime)s %(levelname)s %(message)s', level=logging.INFO)
+logging.basicConfig(filename="/tmp/servicecontroller.log", format='%(asctime)s %(levelname)s %(message)s',
+                    level=logging.INFO)
 
 # check whether Windows or Linux
 IsWindows = False
 if sys.platform.startswith('win'):
     IsWindows = True
+
 
 # get the command line options
 def getCmdOptions():
@@ -45,7 +48,7 @@ def getCmdOptions():
         filehandler = logging.FileHandler('/tmp/servicecontroller.log', 'a')
         log = logging.getLogger()  # root logger - Good to get it only once.
         for hdlr in log.handlers[:]:  # remove the existing file handlers
-            if isinstance(hdlr,logging.FileHandler):
+            if isinstance(hdlr, logging.FileHandler):
                 log.removeHandler(hdlr)
         log.addHandler(filehandler)
 
@@ -62,20 +65,23 @@ else:
 # get a specific file from github
 def cloneRepoFromGithub(reponame):
     repopath = "https://github.com/andreaslbauer/" + reponame
-    logging.debug("Clone repository %s", repopath)
+    localrepopath = SERVICEBASE + '/' + reponame
+    logging.debug("Clone repository %s to local path %s", repopath, localrepopath)
 
     try:
-        Repo.clone_from(repopath, reponame)
-        logging.debug("Successfully cloned repository %s", repopath)
 
+        Repo.clone_from(repopath, localrepopath)
+        logging.info("Successfully cloned repository %s", repopath)
 
     except Exception as e:
         logging.exception("Exception occurred while trying to clone repo %s", reponame)
         logging.error("Unable to clone repository %s", reponame)
 
+
 # clone all repos in our repo list from github
 def cloneRepo(reponame):
     cloneRepoFromGithub(reponame)
+
 
 # delete all repo directories
 def cleanRepo(reponame):
@@ -95,17 +101,48 @@ def cleanRepo(reponame):
         logging.exception("Exception occurred while trying to delete repo %s", reponame)
         logging.error("Unable to remove repository %s", reponame)
 
+
+# check and update repo
+def checkUpdateRepo(reponame):
+    repopath = SERVICEBASE + '/' + reponame
+    # check whether directory exists
+    if not (os.path.exists(repopath)):
+        logging.debug("Path %s for repo %s does not exist, clone repo", repopath, reponame)
+        cloneRepo(reponame)
+        return True
+    else:
+        try:
+            repo = git.Repo(repopath)
+            reporemotename = repo.remotes.origin.name
+            logging.debug("Path %s for repo %s does exist, update repo from %s", repopath, reponame, reporemotename)
+            repo = git.Repo(repopath)
+            changes = repo.remotes.origin.pull()
+            # print(changes[0])
+            # print(changes[0].flags)
+
+            if changes[0].flags != 4:
+                logging.info("Changes have been found for %s", repopath)
+                return True
+            else:
+                return False
+
+        except Exception as e:
+            logging.exception("Exception occurred while trying to update repo %s", reponame)
+            logging.error("Unable to update repository %s", reponame)
+            return False
+
+
 # check whether two files are identical or not
 def compFiles(filepath1, filepath2):
-
     def md5(fname):
         md5hash = hashlib.md5()
-        with open(fname) as handle: #opening the file one line at a time for memory considerations
+        with open(fname) as handle:  # opening the file one line at a time for memory considerations
             for line in handle:
                 md5hash.update(line.encode('utf-8'))
-        return(md5hash.hexdigest())
+        return (md5hash.hexdigest())
 
     return md5(filepath1) == md5(filepath2)
+
 
 # check whether files have changed
 def updateFromReposIfChanged(reponame):
@@ -115,7 +152,7 @@ def updateFromReposIfChanged(reponame):
     repopath = reponame
     for root, dirs, files in os.walk(repopath):
         path = root.split(os.sep)
-        #print((len(path) - 1) * '---', os.path.basename(root))
+        # print((len(path) - 1) * '---', os.path.basename(root))
         # we don't want any of the git meta files
         if (len(path) < 2) or (path[1] != '.git'):
             for file in files:
@@ -135,26 +172,35 @@ def updateFromReposIfChanged(reponame):
     logging.info("For repo %s checked %i files and updated %i files", reponame, fileschecked, filesupdated)
     return filesupdated
 
+
 # restart process
 def restartProcess(reponame):
     for p in psutil.process_iter():
         try:
-            if "python3" in p.exe():
+            pexe = ""
+            try:
+                pexe = p.exe()
+            except Exception as e:
+                pexe = ""
+
+            if "python3" in pexe:
 
                 # see whether this is the process in question
-                if(reponame in p.name()):
-                    logging.debug("Found process %s with PID %s", reponame, p.pid)
+                cmdline = p.cmdline()[1]
+                if (reponame in cmdline):
+                    logging.info("Found process %s (%s) with PID %s, kill it", cmdline, pexe, p.pid)
 
                     # stop the process
                     p.kill()
-                    p.wait(timeout = 10)
-                    
+                    p.wait(timeout=10)
+
         except Exception as e:
-            a = 0
+            logging.exception("Exception occurred while trying to stop process %s", reponame)
+            logging.error("Unable to stop process %s", reponame)
 
     # restart the process
     cmdline = "python3 " + SERVICEBASE + "/" + reponame + "/" + reponame + ".py &"
-    logging.debug("Start: %s", cmdline)
+    logging.info("Start: %s", cmdline)
     os.system(cmdline)
 
 
@@ -164,7 +210,7 @@ def main():
     logging.info("##############################")
 
     # get and interpret command line options
-    #getCmdOptions()
+    # getCmdOptions()
 
     if IsWindows == True:
         logging.info("Running on Windows")
@@ -175,7 +221,13 @@ def main():
     logging.info("***************************************************************")
     logging.info("Web Monitor Application has started")
     logging.info("Running %s", __file__)
-    logging.info("Working directory is %s", os.getcwd())
+    logging.info("Working directory at start is %s", os.getcwd())
+    os.chdir(SERVICEBASE)
+    logging.info("Working directory now is %s", os.getcwd())
+
+    # start the services
+    for reponame in REPOS:
+        restartProcess(reponame)
 
     # now loop forever and check whether the code has changed
     # fetch it and restart the process if yes
@@ -183,19 +235,14 @@ def main():
         for reponame in REPOS:
             logging.debug("Process repository %s", reponame)
 
-            # clone the repos
-            cloneRepo(reponame)
-
-            # check whether any files have changed (or are new)
-            if (updateFromReposIfChanged(reponame) > 0):
+            # check and update repos as needed
+            if checkUpdateRepo(reponame):
                 logging.info("Files have changed for %s.  Restart the process.", reponame)
                 restartProcess(reponame)
 
-            # clean up the repo
-            cleanRepo(reponame)
-
         # sleep for 1 minute
-        time.sleep(180)
+        time.sleep(60)
+
 
 # run the main loop
 main()
