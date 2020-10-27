@@ -19,7 +19,7 @@ import time
 SERVICEBASE = "/home/pi/pimon"
 REPOS = ["datacollector", "monitorwebapp"]
 LOGTOCONSOLE = False
-UPDATEWAITTIME = 120
+UPDATEWAITTIME = 60 * 15
 
 # set up logging
 logging.basicConfig(filename="/tmp/servicecontroller.log", format='%(asctime)s %(levelname)s %(message)s',
