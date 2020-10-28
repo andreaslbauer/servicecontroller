@@ -218,6 +218,8 @@ def main():
     else:
         logging.info("Running on Linux")
 
+    time.sleep(10)
+
     # log start up message
     logging.info("***************************************************************")
     logging.info("Service Controller Application has started")
