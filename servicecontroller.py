@@ -226,6 +226,10 @@ def main():
     os.chdir(SERVICEBASE)
     logging.info("Working directory now is %s", os.getcwd())
 
+    githubhostname = "github.com"
+    pingresponse = os.system("ping -c 1 " + githubhostname)
+    logging.info("Response from ping %s (0 means host is up): %s", githubhostname, pingresponse)
+
     # start the services
     for reponame in REPOS:
         restartProcess(reponame)
