@@ -234,6 +234,7 @@ def main():
 
     # start the services
     for reponame in REPOS:
+        checkUpdateRepo(reponame)
         restartProcess(reponame)
 
     # now loop forever and check whether the code has changed
